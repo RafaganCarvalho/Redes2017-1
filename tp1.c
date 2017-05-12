@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include "arquivos.h"
+
 int main(int argc, char const *argv[]) {
 	if(strcmp(argv[1], "-s") == 0) {
         //Rodando com abertura passiva
@@ -60,4 +62,5 @@ int main(int argc, char const *argv[]) {
     } else {
         return -1;
     }
+	return 0;
 }

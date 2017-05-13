@@ -14,6 +14,16 @@
 #define TIMEOUT_SEC 1
 #define TIMEOUT_uSEC 0
 
+typedef struct {
+    uint32_t sync1;
+    uint32_t sync2;
+    uint16_t chksum;
+    uint16_t length;
+    uint16_t id;
+    uint8_t flags;
+    uint8_t dados[];
+} block;
+
 int s, other_s;
 
 /* Retorna o um descritor de arquivo para o socket aberto. */
@@ -95,6 +105,6 @@ int main(int argc, char const *argv[]) {
     if(!arq_open(argv[3], argv[4]))
         exit(1);
 
-	arq_close();
-	exit(0);
+    arq_close();
+    exit(0);
 }

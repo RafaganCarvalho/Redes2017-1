@@ -8,6 +8,7 @@
 #include <netdb.h>
 
 #include "arquivos.h"
+#include "checksum.h"
 
 int main(int argc, char const *argv[]) {
 	if(strcmp(argv[1], "-s") == 0) {

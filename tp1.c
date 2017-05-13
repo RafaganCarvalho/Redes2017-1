@@ -53,7 +53,7 @@ int openSocket(char const* tipo, char const* addr) {
         listen(s, MAX_PENDING);
 
         int len = sizeof(sin);
-        if((other_s = accept(s, (struct sockaddr*) &sin, &len)) < 0) {
+        if((other_s = accept(s, (struct sockaddr*) &sin, (socklen_t*) &len)) < 0) {
             perror("error: accept");
             close(s);
             return 0;
@@ -76,7 +76,8 @@ int openSocket(char const* tipo, char const* addr) {
         bcopy(hp->h_addr, (char*) &sin.sin_addr, hp->h_length);
         sin.sin_port = htons(server_port);
 
-        if(connect(s, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
+        int len = sizeof(sin);
+        if(connect(s, (struct sockaddr *) &sin, len) < 0) {
             perror("error: connect");
             close(s);
             return 0;
@@ -90,6 +91,10 @@ int openSocket(char const* tipo, char const* addr) {
 int main(int argc, char const *argv[]) {
     if(!openSocket(argv[1], argv[2]))
         exit(1);
-	
+
+    if(!arq_open(argv[3], argv[4]))
+        exit(1);
+
+	arq_close();
 	exit(0);
 }

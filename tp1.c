@@ -205,6 +205,7 @@ int main(int argc, char const *argv[]) {
                     exit(1);
                 }
             }
+            sending = 0;
         } else {
             /* Wait ACK | Block | END */
             uint8_t r = receive();

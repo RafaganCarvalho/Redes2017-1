@@ -127,13 +127,9 @@ size_t readBlock() {
     
     printf("antes memcpy: %d, %s\n", length, buf);
     memcpy(sendBlock.dados, buf, length);
-    printf("apos memcpy\n");
-    if(length == 0)
-        sendBlock.flags = END;
+    sendBlock.flags = length == 0 ? END : 0;
 
-    printf("antes checksum1\n");
     sendBlock.chksum = checksum1((char const*) &sendBlock, length + 14);
-    printf("apos checksum1\n");
 
     return 14 + length; //14 bytes de cabeçalho
 }
@@ -154,17 +150,24 @@ uint8_t receive() {
     recvBlock.length = ntohs(recvBlock.length);
     recvBlock.id = ntohs(recvBlock.id);
 
-    if(recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2)
+    if(recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2) {
+        puts("recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2");
         return 0;
+    }
 
     uint16_t chksum = recvBlock.chksum;
     recvBlock.chksum = 0;
-    if(chksum != checksum1((char const*) &recvBlock, recvBlock.length + 14))
-        return 0;
+    if(chksum != checksum1((char const*) &recvBlock, recvBlock.length + 14)) {
+        puts("chksum != checksum1((char const*) &recvBlock, recvBlock.length + 14)");
+        //return 0;
+    }
 
-    if(recvBlock.flags | ACK | END)
+    if(recvBlock.flags == ACK || recvBlock.flags == END) {
+        printf("recvBlock.flags(%2x), ACK(%2x), END(%2x): %d\n", recvBlock.flags, ACK, END, recvBlock.flags == ACK || recvBlock.flags == END);
         return recvBlock.flags;
+    }
 
+    puts("receive Dados");
     return 1;
 }
 
@@ -202,9 +205,10 @@ int main(int argc, char const *argv[]) {
     size_t length;
     while(sending) {
         /*Block Not Read*/
-        printf("/*Block Not Read*/\n");
-        if(!readToSend)
+        if(!readToSend) {
             length = readBlock();
+            printf("/*Block Not Read*/\n");
+        }
         readToSend = 1;
 
         /*Read To Send*/
@@ -231,24 +235,31 @@ int main(int argc, char const *argv[]) {
             sending = 0;
         } else {
             /* Wait ACK | Block | END */
+            puts("/* Wait ACK | Block | END */");
             uint8_t r = receive();
             if(r == 1) {
                 /* Block Received */
+                puts("/* Block Received */");
                 sendACK();
 
                 /* Read To Write */
+                puts("/* Read To Write */");
                 if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
+                    puts("writeBlock();");
                     writeBlock();
                     lastIdReceived = recvBlock.id;
                     lastCheckSum = recvBlock.chksum;
                 }
             } else if(r & ACK) {
                 /* Block Not Read */
+                puts("/* Block Not Read */");
                 readToSend = 0;
             } else if(r & END) {
                 /* END Received */
+                puts("/* END Received */");
                 sendACK();
                 if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
+                    puts("writeBlock();");
                     writeBlock();
                     lastIdReceived = recvBlock.id;
                     lastCheckSum = recvBlock.chksum;
@@ -269,24 +280,30 @@ int main(int argc, char const *argv[]) {
     time_str.tv_usec = TIMEOUT_uSECMAX;
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &time_str, sizeof(time_str));
     setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &time_str, sizeof(time_str));
-
+    puts("----------------------------/* Not To Send */------------------------------");
     while(receiving) {
         /* Wait Block | END */
+        puts("/* Wait Block | END */");
         uint8_t r = receive();
         if(r == 1) {
             /* Block Received */
+            puts("/* Block Received */");
             sendACK();
 
             /* Read To Write */
+            puts("/* Read To Write */");
             if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
+                puts("writeBlock();");
                 writeBlock();
                 lastIdReceived = recvBlock.id;
                 lastCheckSum = recvBlock.chksum;
             }
         } else if(r & END) {
             /* END Received */
+            puts("/* END Received */");
             sendACK();
             if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
+                puts("writeBlock();");
                 writeBlock();
                 lastIdReceived = recvBlock.id;
                 lastCheckSum = recvBlock.chksum;

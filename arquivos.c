@@ -21,8 +21,8 @@ void arq_close() {
 
 size_t arq_read(char* buf) {
     size_t aux = fread(buf, sizeof(char), INT16_MAX, in);
-    if(feof(in))
-        return EOF;
+    /*if(feof(in) && aux < 0)
+        aux = 0;*/
     return aux;
 }
 

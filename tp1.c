@@ -181,6 +181,7 @@ int main(int argc, char const *argv[]) {
         exit(1);
 
     char sending = 1, readToSend = 0;
+    char receiving = 1;
     char count;
     uint16_t lastIdReceived = -1;
     uint32_t lastCheckSum = 0x40000000;
@@ -199,9 +200,14 @@ int main(int argc, char const *argv[]) {
         }
         if(sendBlock.flags & END) {
             /* Wait ACK */
-            for(count = 0; !(receive() & ACK); count++) {
+            for(count = 0; !(receive() & ACK); count++) { 
                 if(MAX_COUNT > count) {
                     fprintf(stderr, "receive(): Tentativas excedidas: %dx\n", MAX_COUNT);
+                    exit(1);
+                }
+                if(send(s, &sendBlock, length, 0) < 0){
+                    perror("error: send");
+                    close(s);
                     exit(1);
                 }
             }
@@ -214,15 +220,17 @@ int main(int argc, char const *argv[]) {
                 sendACK();
 
                 /* Read To Write */
-                if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum)
+                if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
                     writeBlock();
-                lastIdReceived = recvBlock.id;
-                lastCheckSum = recvBlock.chksum;
+                    lastIdReceived = recvBlock.id;
+                    lastCheckSum = recvBlock.chksum;
+                }
             } else if(r & ACK) {
                 /* Block Not Read */
                 readToSend = 0;
             } else if(r & END) {
                 /* END Received */
+                receiving = 0;
                 sendACK();
             } else if(r == 0) {
                 /* Read To Send */
@@ -240,7 +248,6 @@ int main(int argc, char const *argv[]) {
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &time_str, sizeof(time_str));
     setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &time_str, sizeof(time_str));
 
-    char receiving = 1;
     while(receiving) {
         /* Wait Block | END */
         uint8_t r = receive();
@@ -249,10 +256,11 @@ int main(int argc, char const *argv[]) {
             sendACK();
 
             /* Read To Write */
-            if(lastIdReceived != recvBlock.id)
+            if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
                 writeBlock();
-            lastIdReceived = recvBlock.id;
-            lastCheckSum = recvBlock.chksum;
+                lastIdReceived = recvBlock.id;
+                lastCheckSum = recvBlock.chksum;
+            }
         } else if(r & END) {
             /* END Received */
             sendACK();

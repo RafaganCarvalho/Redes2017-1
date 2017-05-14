@@ -13,6 +13,11 @@
 #define MAX_PENDING 1
 #define TIMEOUT_SEC 1
 #define TIMEOUT_uSEC 0
+#define TIMEOUT_SECMAX 15
+#define TIMEOUT_uSECMAX 0
+#define ACK 0x80
+#define END 0X40
+#define MAX_COUNT 15
 
 typedef struct {
     uint32_t sync1;
@@ -24,7 +29,7 @@ typedef struct {
     uint8_t dados[];
 } block;
 
-int s, other_s;
+int s;
 
 /* Retorna o um descritor de arquivo para o socket aberto. */
 int openSocket(char const* tipo, char const* addr) {
@@ -35,19 +40,19 @@ int openSocket(char const* tipo, char const* addr) {
     
     bzero((char*) &sin, sizeof(sin));
     sin.sin_family = AF_INET;
-    
-    //Configurando timeout
-    struct timeval time_str;
-    time_str.tv_sec = TIMEOUT_SEC;
-    time_str.tv_usec = TIMEOUT_uSEC;
-    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &time_str, sizeof(time_str));
-    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &time_str, sizeof(time_str));
 
     //Abertura do socket
     if ((s = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
         perror("error: socket");
         return 0;
     }
+
+    //Configurando timeout
+    struct timeval time_str;
+    time_str.tv_sec = TIMEOUT_SEC;
+    time_str.tv_usec = TIMEOUT_uSEC;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &time_str, sizeof(time_str));
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &time_str, sizeof(time_str));
 
     if(strcmp(tipo, "-s") == 0) { //Abertura passiva
         server_port = atoi(addr); //Lendo e convertendo a porta do servidor
@@ -62,12 +67,14 @@ int openSocket(char const* tipo, char const* addr) {
         }
         listen(s, MAX_PENDING);
 
+        int other_s;
         int len = sizeof(sin);
         if((other_s = accept(s, (struct sockaddr*) &sin, (socklen_t*) &len)) < 0) {
             perror("error: accept");
             close(s);
             return 0;
         }
+        s = other_s;
     } else if(strcmp(tipo, "-c") == 0) { //Abertura ativa
         //Recuperando endereço do servidor
         char host[15+1]; //000.000.000.000\0
@@ -98,12 +105,114 @@ int openSocket(char const* tipo, char const* addr) {
     return 1;
 }
 
+block sendBlock;
+block recvBlock;
+
+size_t readBlock() {
+    /*char buf[INT16_MAX];
+    size_t length = arq_read(buf);*/
+    return 0;
+}
+
+void writeBlock() {
+
+}
+
+/* Monta o bloco de recebimento.
+Retorna ACK(0x80), END(0x40) ou dado(1), dependendo do valor recebido. Retorna 0 em caso de erro.*/
+uint8_t receive() {
+    return 0;
+}
+
+void sendACK() {
+
+}
+
 int main(int argc, char const *argv[]) {
     if(!openSocket(argv[1], argv[2]))
         exit(1);
 
     if(!arq_open(argv[3], argv[4]))
         exit(1);
+
+    char sending = 1, readToSend = 0;
+    char count;
+    uint16_t lastIdReceive = -1;
+    size_t length;
+    while(sending) {
+        /*Block Not Read*/
+        if(!readToSend)
+            length = readBlock();
+        readToSend = 1;
+
+        /*Read To Send*/
+        if(send(s, &sendBlock, length, 0) < 0){
+            perror("error: send");
+            close(s);
+            exit(1);
+        }
+        if(sendBlock.flags & END) {
+            /* Wait ACK */
+            for(count = 0; !(receive() & ACK); count++) {
+                if(MAX_COUNT > count) {
+                    fprintf(stderr, "receive(): Tentativas excedidas: %dx\n", MAX_COUNT);
+                    exit(1);
+                }
+            }
+        } else {
+            /* Wait ACK | Block | END */
+            uint8_t r = receive();
+            if(r == 1) {
+                /* Block Received */
+                sendACK();
+
+                /* Read To Write */
+                if(lastIdReceive != recvBlock.id)
+                    writeBlock();
+            } else if(r & ACK) {
+                /* Block Not Read */
+                readToSend = 0;
+            } else if(r & END) {
+                /* END Received */
+                sendACK();
+            } else if(r == 0) {
+                /* Read To Send */
+            } else {
+                fprintf(stderr, "receive(): Retorno inválido %d\n", r);
+                exit(1);
+            }
+        }
+    }
+    /* Not To Send */
+    //Configurando timeout
+    struct timeval time_str;
+    time_str.tv_sec = TIMEOUT_SECMAX;
+    time_str.tv_usec = TIMEOUT_uSECMAX;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &time_str, sizeof(time_str));
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &time_str, sizeof(time_str));
+
+    char receiving = 1;
+    while(receiving) {
+        /* Wait Block | END */
+        uint8_t r = receive();
+        if(r == 1) {
+            /* Block Received */
+            sendACK();
+
+            /* Read To Write */
+            if(lastIdReceive != recvBlock.id)
+                writeBlock();
+        } else if(r & END) {
+            /* END Received */
+            sendACK();
+            receiving = 0;
+        } else if(r == 0) {
+            /* Wait Block | END */
+        } else {
+            fprintf(stderr, "receive(): Retorno inválido %d\n", r);
+            exit(1);
+        }
+    }
 
     arq_close();
     exit(0);

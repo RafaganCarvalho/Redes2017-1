@@ -1,0 +1,69 @@
+O Futuro do LaTeX, Parte II — Por Que LaTeX
+
+14/08/2014Artigoslatex, linguagens de marcação, texto puro
+Na primeira parte desta série, falamos da importância de linguagens de marcação.
+
+Vamos analisar qual é o nosso problema e por que estou gastando tempo nisso. O seu computador contém arquivos em inúmeros formatos; alguns podem ser abertos por apenas um programa (ou um pequeno número deles). Geralmente se identifica o tipo de arquivo pela extensão do nome (algo do tipo nome_do_arquivo.extensao). Assim, o seu navegador não sabe o que fazer com um arquivo .xls, enquanto que o Excel não consegue abrir uma apresentação .ppt do PowerPoint.
+
+Um arquivo é apenas uma sequência de bytes, um conjunto de 0 e 1 que você já deve ter visto em algum filme de ficção científica. A questão é como interpretar essa sequência, transformando-a em informação útil ao usuário. Os 0 e 1 de um arquivo do Word, por exemplo, contém todas as instruções sobre o texto, as imagens, as margens, as tabelas, as fontes etc
+
+O formato mais básico de todos é um arquivo de texto puro (plain text). Um arquivo de texto puro contém apenas bytes que representam caracteres, sem nenhuma informação adicional. Os programas ainda precisam saber converter os bytes em letras, mas é só isso; é um formato bem documentado, aberto, e praticamente todos os sistemas lidam bem com texto puro. Se o leitor que usa Windows criar uma nota, salvar como um .txt e me mandar, posso abrir esse arquivo no meu iPhone. Existem alguns detalhes de apresentação que são característica do editor; a fonte na qual o leitor escreveu a sua nota não é a mesma na qual eu vou ler, porque esta informação não está embutida no arquivo. O programa lê o texto e o apresenta numa fonte arbitrária, ou até numa outra cor.
+
+Mas, se o texto puro não contém formatação, como, usando esse tipo de arquivo leve e portável, produzir obras complexas como livros, sites, artigos, relatórios?
+
+Fazemos isso com linguagens de marcação. Usando comandos em texto, marcamos regiões do nosso arquivo para serem formatadas; um programa então processa esse arquivo, interpreta os comandos e cria um arquivo final destinado à visualização.
+
+No primeiro texto falamos de HTML e páginas da web. Agora vamos falar da produção de documentos científicos, com sua divisão em capítulos e seções e uso de equações, figuras, tabelas.
+
+O formato mais usado na Academia para isso é o LaTeX, que é uma extensão de uma linguagem chamada TeX, que por sua foi criada por um matemático especificamente para produção de livros sobre programação e, não por acaso, é especialmente adequado para criação de equações.
+
+(Se o leitor já está familiarizado com a linguagem e quer saber sobre o que eu acho do tal futuro do LaTeX, por favor aguarde o próximo texto. Primeiramente darei uma breve explicação do que é LaTeX e por que o uso.)
+
+Um documento em LaTeX tem a seguinte forma:
+
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+
+\title{O Futuro do \LaTeX}
+\author{Fábio}
+
+\begin{document}
+
+\maketitle
+
+\section{Introdução}
+
+O \LaTeX{} é ótimo para fazer equações, como essa na mesma linha $E = m c^2$ ou esta em um parágrafo a parte:
+
+\begin{equation}
+    a^2 + b^2 = c^2
+\end{equation}
+
+\end{document}
+
+Repare na estrutura lógica desse trecho. Definimos a classe de um documento, (e existem diversas, como book, report, entre outras, que podem até ser criadas pelo usuário), definimos um título e um autor, damos um comando para um começo de seção. No primeiro parágrafo, colocamos uma equação, e depois criamos outra separada. Por último, fechamos um documento.
+
+Vale repetir: isto é apenas texto. Na versão final, o título vai estar em um estilo, o cabeçalho do capítulo outro, o parágrafo normal em outro. As equações vão ter uma fonte diferente e assim por diante.
+
+Como produzir esta versão final? Além de ser uma linguagem, existe um programa chamado LaTeX que compila um arquivo contendo um texto válido. Este post já está muito comprido, mas o leitor pode facilmente encontrar instruções de como fazer isso da maneira mais fácil na sua plataforma (Windows, Mac, Linux, até iOS). O resultado é algo assim, um PDF de onde tirei este screenshot:
+
+
+
+Este documento é muito simples e não se compara à complexidade de uma dissertação. Existem muitas outras coisas que o LaTeX pode fazer, em especial citações. Se o leitor já fez algum trabalho acadêmico, sabe a dor que é produzir referências bibliográficas adequadamente formatadas; com o LaTeX, você cria um arquivo de bibliografia, separado do texto, contendo todas as suas referências escritas numa linguagem própria (BibTeX). Depois, cria um pacote dizendo como processar essa linguagem e produzir uma referência (como “AUTOR, Título. Local: Editora, Ano”), e, claro, existem inúmeros pacotes prontos, inclusive para ABNT. Assim, no texto, você precisa apenas escrever \cite{fortkamp}, por exemplo, e o LaTeX e BibTeX formatam a referência para você.
+
+Isto é só uma introdução e não espero que o leitor aprenda a usar o LaTeX. Quero que fique claro apenas isso: é uma linguagem de marcação especializada para criar documentos científicos. Usando texto puro, é possível mesclar o texto que estou escrevendo com comandos que vão ser processados depois, gerando um arquivo pronto para ser distribuído.
+
+Mas afinal, por que eu uso isso? Para repetir a pergunta que eu ouço muito, por que eu não uso o Word como uma pessoa normal?
+
+Confiança é, para mim, um aspecto importante de como usar a tecnologia, e o Word simplesmente não é confiável. Eu já perdi muitos trabalhos feitos no Word, depois de ele travar quando eu adiciono uma figura muito grande, e isso é inaceitável. Além disso, se criar equações complicadas em LaTeX é difícil, no Word é impossível.
+
+Quando estou escrevendo um texto em LaTeX, eu não clico em nenhum menu para inserir figura, ou deixar um pedaço negrito, ou nada disso. Vou repetir mais uma vez porque sou chato: é apenas texto. Você não insere tabelas no arquivo fonte; você dá um comando para o processador LaTeX produzir uma tabela ali. Com a prática (e com um livro de referência do lado para consultar), fica muito fácil criar uma equação complexa, digitando apenas comandos.
+
+Além disso, o LaTeX separa a formatação da escrita. No exemplo acima, eu dou um comando para criar um título, mas não existe nenhuma informação de como o título vai estar formatado; isso é papel da classe do documento. Como falei, é possível criar classes próprias (existe uma ótima que formata todo o documento já seguindo a ABNT). Essa filosofia desencoraja o hábito nada produtivo de ficar “ajustando” a fonte e o estilo de um documento enquanto se escreve.
+
+Gosto também da extensibilidade. O LaTeX foi criado para textos em inglês, sem acentos, mas existe um pacote que permite esses caractereres a mais (é o pacote inputenc que usei acima) — observe que a data ficou em inglês, e omiti o pacote que faz a tradução justamente para chamar a atenção para este fato. Existe outro, um dos meus preferidos atualmente, que formata unidades SI adequadamente. Ou seja: quando você está escrevendo, e encontra um problema, a chance de você achar um pacote pronto é alta.
+
+Por último, o LaTeX é independente de programas. O compilador é software livre e pode ser facilmente instalado em qualquer sistema. E o editor… não existe um “editor de LaTeX”. Vamos repetir? É apenas texto. Você pode escrever no maldito Bloco de Notas, se quiser; ou pode escrever em algum editor de texto poderoso (voltado geralmente para programação), como o Notepad++ no Windows ou TextWrangler no Mac (que eu adoro e estou usando para escrever este post). Se preferir algo mais fácil, existem editores “integrados”, que reúnem a edição com o processamento (no Mac, muitas vezes eu uso o Texpad , que é bem razoável) — mas eles são apenas isso, editores. O texto que você escrever em um editor do Windows e me mandar vai ser aberto e, se eu tiver instalado todos os pacotes que você usou, compilado normalmente no Texpad.
+
+Mas se o LaTeX é tão bom, por que eu acho, como é o título desta série, que ele precisa de um futuro? Aguardem cenas do próximo capítulo.

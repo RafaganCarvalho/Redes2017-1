@@ -10,7 +10,7 @@ int arq_open(char const* input, char const* output);
 /* Fecha arquivos abertos via arq_open(). */
 void arq_close();
 
-/* Lê o arquivo de entrada aberto via arq_open(). Retorna o número de bytes lidos. Se leitura atingir o fim do arquivo, retorna EOF. */
+/* Lê o arquivo de entrada aberto via arq_open(). Retorna o número de bytes lidos. Se leitura atingir o fim do arquivo, retorna zero. */
 size_t arq_read(char* buf);
 
 /* Escreve [length] bytes no arquivo de saída aberto via arq_open(). Retorna zero em caso de erro.*/

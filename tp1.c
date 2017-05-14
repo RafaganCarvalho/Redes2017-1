@@ -182,7 +182,8 @@ int main(int argc, char const *argv[]) {
 
     char sending = 1, readToSend = 0;
     char count;
-    uint16_t lastIdReceive = -1;
+    uint16_t lastIdReceived = -1;
+    uint32_t lastCheckSum = 0x40000000;
     size_t length;
     while(sending) {
         /*Block Not Read*/
@@ -212,9 +213,10 @@ int main(int argc, char const *argv[]) {
                 sendACK();
 
                 /* Read To Write */
-                if(lastIdReceive != recvBlock.id)
+                if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum)
                     writeBlock();
-                lastIdReceive = recvBlock.id;
+                lastIdReceived = recvBlock.id;
+                lastCheckSum = recvBlock.chksum;
             } else if(r & ACK) {
                 /* Block Not Read */
                 readToSend = 0;
@@ -246,9 +248,10 @@ int main(int argc, char const *argv[]) {
             sendACK();
 
             /* Read To Write */
-            if(lastIdReceive != recvBlock.id)
+            if(lastIdReceived != recvBlock.id)
                 writeBlock();
-            lastIdReceive = recvBlock.id;
+            lastIdReceived = recvBlock.id;
+            lastCheckSum = recvBlock.chksum;
         } else if(r & END) {
             /* END Received */
             sendACK();

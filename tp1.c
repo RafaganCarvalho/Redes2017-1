@@ -109,23 +109,68 @@ block sendBlock;
 block recvBlock;
 
 size_t readBlock() {
-    /*char buf[INT16_MAX];
-    size_t length = arq_read(buf);*/
-    return 0;
+    char buf[INT16_MAX];
+    size_t length = arq_read(buf);
+
+    sendBlock.sync1 = sendBlock.sync2 = 0xDCC023C2;
+    sendBlock.length = htons(length);
+    sendBlock.chksum = 0;
+    sendBlock.id = htons((sendBlock.id + 1) % 2);
+    memcpy(sendBlock.dados, buf, length);
+    if(length == 0 || length == EOF)
+        sendBlock.flags = END;
+
+    sendBlock.chksum = checksum1((char const*) &sendBlock, length + 14);
+
+    return 14 + length; //14 bytes de cabeçalho
 }
 
 void writeBlock() {
-
+    arq_write((char const*) recvBlock.dados, recvBlock.length);
 }
 
-/* Monta o bloco de recebimento.
-Retorna ACK(0x80), END(0x40) ou dado(1), dependendo do valor recebido. Retorna 0 em caso de erro.*/
+/* 
+ * Monta o bloco de recebimento.
+ * Retorna ACK(0x80), END(0x40) ou dado(1), dependendo do valor recebido. 
+ * Retorna 0 em caso de erro ou timeout.
+ */
 uint8_t receive() {
-    return 0;
+    if(recv(s, &recvBlock, 14 + INT16_MAX, 0) < 0)
+        return 0;
+
+    recvBlock.length = ntohs(recvBlock.length);
+    recvBlock.id = ntohs(recvBlock.id);
+
+    if(recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2)
+        return 0;
+
+    uint16_t chksum = recvBlock.chksum;
+    recvBlock.chksum = 0;
+    if(chksum != checksum1((char const*) &recvBlock, recvBlock.length + 14))
+        return 0;
+
+    if(recvBlock.flags | ACK | END)
+        return recvBlock.flags;
+
+    return 1;
 }
 
 void sendACK() {
+    block blockACK;
+    blockACK.sync1 = blockACK.sync2 = 0xDCC023C2;
+    blockACK.chksum = 0;
+    blockACK.length = htons(0);
+    blockACK.id = htons(recvBlock.id);
+    blockACK.flags = ACK;
+    //blockACK.dados[];
 
+    blockACK.chksum = checksum1((char const*) &blockACK, blockACK.length + 14);
+
+    if(send(s, &blockACK, blockACK.length + 14, 0) < 0){
+        perror("error: send");
+        close(s);
+        exit(1);
+    }
 }
 
 int main(int argc, char const *argv[]) {
@@ -169,6 +214,7 @@ int main(int argc, char const *argv[]) {
                 /* Read To Write */
                 if(lastIdReceive != recvBlock.id)
                     writeBlock();
+                lastIdReceive = recvBlock.id;
             } else if(r & ACK) {
                 /* Block Not Read */
                 readToSend = 0;
@@ -202,6 +248,7 @@ int main(int argc, char const *argv[]) {
             /* Read To Write */
             if(lastIdReceive != recvBlock.id)
                 writeBlock();
+            lastIdReceive = recvBlock.id;
         } else if(r & END) {
             /* END Received */
             sendACK();

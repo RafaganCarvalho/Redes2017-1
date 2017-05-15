@@ -31,7 +31,9 @@ int arq_read_end() {
 }
 
 int arq_write(char const* buf, int length) {
-    if(fwrite(buf, sizeof(char), length, out) == length)
+    int len = fwrite(buf, sizeof(char), length, out);
+    fflush(out);
+    if(len == length)
         return 1;
     else
         return 0;

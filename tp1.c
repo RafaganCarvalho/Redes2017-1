@@ -124,8 +124,6 @@ size_t readBlock() {
     sendBlock.chksum = 0;
     sendBlock.id = htons((ntohs(sendBlock.id) + 1) % 2);
     
-    //printf("sendBlock.id(%d)\n", ntohs(sendBlock.id));
-    //printf("antes memcpy: %d, %s\n", length, buf);
     memcpy(sendBlock.dados, buf, length);
     sendBlock.flags = arq_read_end() ? END : 0;
 
@@ -145,9 +143,7 @@ void writeBlock() {
  */
 uint8_t receive() {
     //Recebimento do cabeçalho
-    if(recv(s, &recvBlock, 15, 0) < 0) {
-        if(errno == EAGAIN || errno == EWOULDBLOCK)
-            return 2;
+    if(recv(s, &recvBlock, 15, 0) <= 0) {
         return 0;
     }
     recvBlock.length = ntohs(recvBlock.length);
@@ -155,29 +151,23 @@ uint8_t receive() {
 
     //Recebimento dos dados após saber o length dos dados
     if(recv(s, &recvBlock.dados, recvBlock.length, 0) < 0) {
-        if(errno == EAGAIN || errno == EWOULDBLOCK)
-            return 2;
         return 0;    
     }
 
     if(recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2) {
-        puts("recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2");
         return 0;
     }
 
     /*uint16_t chksum = recvBlock.chksum;
     recvBlock.chksum = 0;
     if(chksum != checksum1((char const*) &recvBlock, recvBlock.length + 15)) {
-        puts("chksum != checksum1((char const*) &recvBlock, recvBlock.length + 15)");
         //return 0;
     }*/
 
-    /*printf("recvBlock.flags(%2x), ACK(%2x), END(%2x): %d\n", recvBlock.flags, ACK, END, recvBlock.flags == ACK || recvBlock.flags == END);*/
     if(recvBlock.flags == ACK || recvBlock.flags == END) {
         return recvBlock.flags;
     }
 
-    puts("receive Dados");
     return 1;
 }
 
@@ -191,7 +181,7 @@ void sendACK() {
     //blockACK.dados[];
 
     /*blockACK.chksum = checksum1((char const*) &blockACK, blockACK.length + 15);*/
-    printf("sendACK() blockACK.flags(%02x)\n", blockACK.flags);
+
     if(send(s, &blockACK, blockACK.length + 15, 0) < 0){
         perror("error: send");
         close(s);
@@ -206,23 +196,20 @@ int main(int argc, char const *argv[]) {
     if(!arq_open(argv[3], argv[4]))
         exit(1);
 
-    char sending = 1, readToSend = 0;
+    char sending = 1, blockNotRead = 1;
     char receiving = 1;
-    char count;
     uint16_t lastIdReceived = -1;
     uint32_t lastCheckSum = 0x40000000;
     size_t length;
     while(sending || receiving) {
-        /*Block Not Read*/
         if(sending) {
-            if(!readToSend) {
+            if(blockNotRead) {
+                /*Block Not Read*/
                 length = readBlock();
-                printf("/*Block Not Read*/\n");
+                blockNotRead = 0;
             }
-            readToSend = 1;
 
             /*Read To Send*/
-            printf("/*Read To Send*/ sendBlock.flags(%02x)\n", sendBlock.flags);
             if(send(s, &sendBlock, length, 0) < 0){
                 perror("error: send");
                 close(s);
@@ -231,111 +218,28 @@ int main(int argc, char const *argv[]) {
         }
 
         /* Wait ACK | Block | END */
-        //char wait_ack = 1;
-        //while(wait_ack) {
-
-            puts("/* Wait ACK | Block | END */");
-            uint8_t r = receive();
-
-            int i;
-            for (i = 0; i < recvBlock.length; i++) {
-                printf("%c", recvBlock.dados[i]);
-            }
-            puts("");
-            if(r == 1) {
-                /* Block Received */
-                puts("/* Block Received */");
-                sendACK();
-
-                /* Read To Write */
-                printf("/* Read To Write */ lastIdReceived(%02x) recvBlock.id(%02x) lastCheckSum(%02x) recvBlock.chksum(%02x)\n", lastIdReceived, recvBlock.id, lastCheckSum, recvBlock.chksum);
-                if(lastIdReceived != recvBlock.id || lastCheckSum != recvBlock.chksum) {
-                    puts("writeBlock();");
-                    writeBlock();
-                    lastIdReceived = recvBlock.id;
-                    lastCheckSum = recvBlock.chksum;
-                }
-            } else if(r == ACK) {
-                //wait_ack = 0;
-                /* Block Not Read */
-                puts("/* Block Not Read */");
-                if(sendBlock.flags == END)
-                    sending = 0;
-                else
-                    readToSend = 0;
-            } else if(r == END) {
-                /* END Received */
-                puts("/* END Received */");
-                sendACK();
-
-                printf("/* Read To Write */ lastIdReceived(%02x) recvBlock.id(%02x) lastCheckSum(%02x) recvBlock.chksum(%02x)\n", lastIdReceived, recvBlock.id, lastCheckSum, recvBlock.chksum);
-                if(lastIdReceived != recvBlock.id || lastCheckSum != recvBlock.chksum) {
-                    puts("writeBlock();");
-                    writeBlock();
-                    lastIdReceived = recvBlock.id;
-                    lastCheckSum = recvBlock.chksum;
-                }
+        uint8_t r = receive();
+        if(r == 1 || r == END) {
+            /* Block Received */
+            sendACK();
+            if(r == END)
                 receiving = 0;
-            } else if(r == 0) {
-                /* Read To Send */
-            } else if(r == 2) {
-                //wait_ack = 0;
-                /* Read To Send */
-            } else {
-                fprintf(stderr, "receive1(): Retorno inválido %d\n", r);
-                exit(1);
+
+            /* Read To Write */
+            if(lastIdReceived != recvBlock.id || lastCheckSum != recvBlock.chksum) {
+                writeBlock();
+                lastIdReceived = recvBlock.id;
+                lastCheckSum = recvBlock.chksum;
             }
-        //}
+        } else if(r == ACK) {
+            if(sendBlock.flags == END) {
+                sending = 0;
+            } else {
+                /* Block Not Read */
+                blockNotRead = 1;
+            }
+        }
     }
-    /* Not To Send */
-    //Configurando timeout
-    // struct timeval time_str;
-    // time_str.tv_sec = TIMEOUT_SECMAX;
-    // time_str.tv_usec = TIMEOUT_uSECMAX;
-    // setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &time_str, sizeof(time_str));
-    // setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &time_str, sizeof(time_str));
-    // puts("----------------------------/* Not To Send */------------------------------");
-    // while(receiving) {
-    //     /* Wait Block | END */
-    //     puts("/* Wait Block | END */");
-    //     uint8_t r = receive();
-    //     if(r == 1) {
-    //         /* Block Received */
-    //         puts("/* Block Received */");
-    //         sendACK();
-
-    //         /* Read To Write */
-    //         printf("/* Read To Write */ lastIdReceived(%02x) recvBlock.id(%02x) lastCheckSum(%02x) recvBlock.chksum(%02x)\n", lastIdReceived, recvBlock.id, lastCheckSum, recvBlock.chksum);
-    //         if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
-    //             puts("writeBlock();");
-    //             writeBlock();
-    //             lastIdReceived = recvBlock.id;
-    //             lastCheckSum = recvBlock.chksum;
-    //         }
-    //     } else if(r == END) {
-    //         /* END Received */
-    //         puts("/* END Received */");
-    //         sendACK();
-
-    //         printf("/* Read To Write */ lastIdReceived(%02x) recvBlock.id(%02x) lastCheckSum(%02x) recvBlock.chksum(%02x)\n", lastIdReceived, recvBlock.id, lastCheckSum, recvBlock.chksum);
-    //         if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
-    //             puts("writeBlock();");
-    //             writeBlock();
-    //             lastIdReceived = recvBlock.id;
-    //             lastCheckSum = recvBlock.chksum;
-    //         }
-    //         receiving = 0;
-    //     } else if(r == 0) {
-    //         /* Wait Block | END */
-    //     } else if(r == 2) {
-    //         /* Wait Block | END */
-    //     } else if(r == ACK) {
-    //         /* Wait Block | END */
-    //     } else {
-    //         fprintf(stderr, "receive2(): Retorno inválido %d\n", r);
-    //         exit(1);
-    //     }
-    // }
 
     arq_close();
     exit(0);

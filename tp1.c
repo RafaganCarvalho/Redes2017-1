@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <errno.h>
 
 #include "arquivos.h"
 #include "checksum.h"
@@ -20,18 +21,16 @@
 #define MAX_COUNT 15
 
 typedef struct {
-    uint32_t sync1;
-    uint32_t sync2;
-    uint16_t chksum;
-    uint16_t length;
-    uint16_t id;
-    uint8_t flags;
+    uint32_t sync1; /*4bytes*/
+    uint32_t sync2; /*4bytes*/
+    uint16_t chksum; /*2bytes*/
+    uint16_t length; /*2bytes*/
+    uint16_t id; /*2bytes*/
+    uint8_t flags; /*1byte*/
     uint8_t dados[INT16_MAX];
 } block;
 
 int s;
-
-FILE* debbug_log;
 
 /* Retorna o um descritor de arquivo para o socket aberto. */
 int openSocket(char const* tipo, char const* addr) {
@@ -127,11 +126,11 @@ size_t readBlock() {
     
     printf("antes memcpy: %d, %s\n", length, buf);
     memcpy(sendBlock.dados, buf, length);
-    sendBlock.flags = length == 0 ? END : 0;
+    sendBlock.flags = arq_read_end() ? END : 0;
 
-    sendBlock.chksum = checksum1((char const*) &sendBlock, length + 14);
+    /*sendBlock.chksum = checksum1((char const*) &sendBlock, length + 15);*/
 
-    return 14 + length; //14 bytes de cabeçalho
+    return 15 + length; //15 bytes de cabeçalho
 }
 
 void writeBlock() {
@@ -144,26 +143,34 @@ void writeBlock() {
  * Retorna 0 em caso de erro ou timeout.
  */
 uint8_t receive() {
-    if(recv(s, &recvBlock, 14 + INT16_MAX, 0) < 0)
+    if(recv(s, &recvBlock, 15, 0) < 0) {
+        if(errno == EAGAIN || errno == EWOULDBLOCK)
+            return 2;
         return 0;
+    }
 
     recvBlock.length = ntohs(recvBlock.length);
     recvBlock.id = ntohs(recvBlock.id);
+    if(recv(s, &recvBlock.dados, recvBlock.length, 0) < 0) {
+        if(errno == EAGAIN || errno == EWOULDBLOCK)
+            return 2;
+        return 0;    
+    }
 
     if(recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2) {
         puts("recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2");
         return 0;
     }
 
-    uint16_t chksum = recvBlock.chksum;
+    /*uint16_t chksum = recvBlock.chksum;
     recvBlock.chksum = 0;
-    if(chksum != checksum1((char const*) &recvBlock, recvBlock.length + 14)) {
-        puts("chksum != checksum1((char const*) &recvBlock, recvBlock.length + 14)");
+    if(chksum != checksum1((char const*) &recvBlock, recvBlock.length + 15)) {
+        puts("chksum != checksum1((char const*) &recvBlock, recvBlock.length + 15)");
         //return 0;
-    }
+    }*/
 
+    printf("recvBlock.flags(%2x), ACK(%2x), END(%2x): %d\n", recvBlock.flags, ACK, END, recvBlock.flags == ACK || recvBlock.flags == END);
     if(recvBlock.flags == ACK || recvBlock.flags == END) {
-        printf("recvBlock.flags(%2x), ACK(%2x), END(%2x): %d\n", recvBlock.flags, ACK, END, recvBlock.flags == ACK || recvBlock.flags == END);
         return recvBlock.flags;
     }
 
@@ -180,9 +187,9 @@ void sendACK() {
     blockACK.flags = ACK;
     //blockACK.dados[];
 
-    blockACK.chksum = checksum1((char const*) &blockACK, blockACK.length + 14);
-
-    if(send(s, &blockACK, blockACK.length + 14, 0) < 0){
+    /*blockACK.chksum = checksum1((char const*) &blockACK, blockACK.length + 15);*/
+    printf("sendACK() blockACK.flags(%02x)\n", blockACK.flags);
+    if(send(s, &blockACK, blockACK.length + 15, 0) < 0){
         perror("error: send");
         close(s);
         exit(1);
@@ -190,7 +197,6 @@ void sendACK() {
 }
 
 int main(int argc, char const *argv[]) {
-    debbug_log = fopen(argv[5], "w");
     if(!openSocket(argv[1], argv[2]))
         exit(1);
 
@@ -212,66 +218,86 @@ int main(int argc, char const *argv[]) {
         readToSend = 1;
 
         /*Read To Send*/
-        printf("/*Read To Send*/\n");
+        printf("/*Read To Send*/ sendBlock.flags(%02x)\n", sendBlock.flags);
         if(send(s, &sendBlock, length, 0) < 0){
             perror("error: send");
             close(s);
             exit(1);
         }
-        if(sendBlock.flags & END) {
-            /* Wait ACK */
-            printf("/* Wait ACK */\n");
-            for(count = 0; !(receive() & ACK); count++) { 
-                if(MAX_COUNT > count) {
-                    fprintf(stderr, "receive(): Tentativas excedidas: %dx\n", MAX_COUNT);
-                    exit(1);
-                }
-                if(send(s, &sendBlock, length, 0) < 0){
-                    perror("error: send");
-                    close(s);
-                    exit(1);
-                }
-            }
-            sending = 0;
-        } else {
+        //if(sendBlock.flags == END) {
+        //    /* Wait ACK */
+        //    printf("/* Wait ACK */\n");
+        //    for(count = 0; !(receive() & ACK); count++) { 
+        //        if(count > MAX_COUNT) {
+        //            fprintf(stderr, "receive(): Tentativas excedidas: %dx\n", MAX_COUNT);
+        //            exit(1);
+        //        }
+        //        printf("sendBlock.flags(%02x)\n", sendBlock.flags);
+        //        if(send(s, &sendBlock, length, 0) < 0){
+        //            perror("error: send");
+        //            close(s);
+        //            exit(1);
+        //        }
+        //    }
+        //    sending = 0;
+        //} else {
             /* Wait ACK | Block | END */
-            puts("/* Wait ACK | Block | END */");
-            uint8_t r = receive();
-            if(r == 1) {
-                /* Block Received */
-                puts("/* Block Received */");
-                sendACK();
+            char wait_ack = 1;
+            while(wait_ack) {
 
-                /* Read To Write */
-                puts("/* Read To Write */");
-                if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
-                    puts("writeBlock();");
-                    writeBlock();
-                    lastIdReceived = recvBlock.id;
-                    lastCheckSum = recvBlock.chksum;
+                puts("/* Wait ACK | Block | END */");
+                uint8_t r = receive();
+
+                int i;
+                for (i = 0; i < recvBlock.length; i++) {
+                    printf("%c", recvBlock.dados[i]);
                 }
-            } else if(r & ACK) {
-                /* Block Not Read */
-                puts("/* Block Not Read */");
-                readToSend = 0;
-            } else if(r & END) {
-                /* END Received */
-                puts("/* END Received */");
-                sendACK();
-                if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
-                    puts("writeBlock();");
-                    writeBlock();
-                    lastIdReceived = recvBlock.id;
-                    lastCheckSum = recvBlock.chksum;
+                puts("");
+                if(r == 1) {
+                    /* Block Received */
+                    puts("/* Block Received */");
+                    sendACK();
+
+                    /* Read To Write */
+                    printf("/* Read To Write */ lastIdReceived(%02x) recvBlock.id(%02x) lastCheckSum(%02x) recvBlock.chksum(%02x)\n", lastIdReceived, recvBlock.id, lastCheckSum, recvBlock.chksum);
+                    if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
+                        puts("writeBlock();");
+                        writeBlock();
+                        lastIdReceived = recvBlock.id;
+                        lastCheckSum = recvBlock.chksum;
+                    }
+                } else if(r == ACK) {
+                    wait_ack = 0;
+                    /* Block Not Read */
+                    puts("/* Block Not Read */");
+                    if(sendBlock.flags == END)
+                        sending = 0;
+                    else
+                        readToSend = 0;
+                } else if(r == END) {
+                    /* END Received */
+                    puts("/* END Received */");
+                    sendACK();
+
+                    printf("/* Read To Write */ lastIdReceived(%02x) recvBlock.id(%02x) lastCheckSum(%02x) recvBlock.chksum(%02x)\n", lastIdReceived, recvBlock.id, lastCheckSum, recvBlock.chksum);
+                    if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
+                        puts("writeBlock();");
+                        writeBlock();
+                        lastIdReceived = recvBlock.id;
+                        lastCheckSum = recvBlock.chksum;
+                    }
+                    receiving = 0;
+                } else if(r == 0) {
+                    /* Read To Send */
+                } else if(r == 2) {
+                    wait_ack = 0;
+                    /* Read To Send */
+                } else {
+                    fprintf(stderr, "receive(): Retorno inválido %d\n", r);
+                    exit(1);
                 }
-                receiving = 0;
-            } else if(r == 0) {
-                /* Read To Send */
-            } else {
-                fprintf(stderr, "receive(): Retorno inválido %d\n", r);
-                exit(1);
             }
-        }
+        //}
     }
     /* Not To Send */
     //Configurando timeout
@@ -291,7 +317,7 @@ int main(int argc, char const *argv[]) {
             sendACK();
 
             /* Read To Write */
-            puts("/* Read To Write */");
+            printf("/* Read To Write */ lastIdReceived(%02x) recvBlock.id(%02x) lastCheckSum(%02x) recvBlock.chksum(%02x)\n", lastIdReceived, recvBlock.id, lastCheckSum, recvBlock.chksum);
             if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
                 puts("writeBlock();");
                 writeBlock();
@@ -302,6 +328,8 @@ int main(int argc, char const *argv[]) {
             /* END Received */
             puts("/* END Received */");
             sendACK();
+
+            printf("/* Read To Write */ lastIdReceived(%02x) recvBlock.id(%02x) lastCheckSum(%02x) recvBlock.chksum(%02x)\n", lastIdReceived, recvBlock.id, lastCheckSum, recvBlock.chksum);
             if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
                 puts("writeBlock();");
                 writeBlock();
@@ -318,6 +346,5 @@ int main(int argc, char const *argv[]) {
     }
 
     arq_close();
-    fclose(debbug_log);
     exit(0);
 }

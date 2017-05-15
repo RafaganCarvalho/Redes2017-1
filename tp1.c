@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <errno.h>
 
 #include "arquivos.h"
 #include "checksum.h"
@@ -20,18 +21,16 @@
 #define MAX_COUNT 15
 
 typedef struct {
-    uint32_t sync1;
-    uint32_t sync2;
-    uint16_t chksum;
-    uint16_t length;
-    uint16_t id;
-    uint8_t flags;
+    uint32_t sync1; /*4bytes*/
+    uint32_t sync2; /*4bytes*/
+    uint16_t chksum; /*2bytes*/
+    uint16_t length; /*2bytes*/
+    uint16_t id; /*2bytes*/
+    uint8_t flags; /*1byte*/
     uint8_t dados[INT16_MAX];
 } block;
 
 int s;
-
-FILE* debbug_log;
 
 /* Retorna o um descritor de arquivo para o socket aberto. */
 int openSocket(char const* tipo, char const* addr) {
@@ -123,19 +122,14 @@ size_t readBlock() {
     sendBlock.sync1 = sendBlock.sync2 = 0xDCC023C2;
     sendBlock.length = htons(length);
     sendBlock.chksum = 0;
-    sendBlock.id = htons((sendBlock.id + 1) % 2);
+    sendBlock.id = htons((ntohs(sendBlock.id) + 1) % 2);
     
-    printf("antes memcpy: %d, %s\n", length, buf);
     memcpy(sendBlock.dados, buf, length);
-    printf("apos memcpy\n");
-    if(length == 0)
-        sendBlock.flags = END;
+    sendBlock.flags = arq_read_end() ? END : 0;
 
-    printf("antes checksum1\n");
-    sendBlock.chksum = checksum1((char const*) &sendBlock, length + 14);
-    printf("apos checksum1\n");
+    /*sendBlock.chksum = checksum1((char const*) &sendBlock, length + 15);*/
 
-    return 14 + length; //14 bytes de cabeçalho
+    return 15 + length; //15 bytes de cabeçalho
 }
 
 void writeBlock() {
@@ -148,22 +142,31 @@ void writeBlock() {
  * Retorna 0 em caso de erro ou timeout.
  */
 uint8_t receive() {
-    if(recv(s, &recvBlock, 14 + INT16_MAX, 0) < 0)
+    //Recebimento do cabeçalho
+    if(recv(s, &recvBlock, 15, 0) <= 0) {
         return 0;
-
+    }
     recvBlock.length = ntohs(recvBlock.length);
     recvBlock.id = ntohs(recvBlock.id);
 
-    if(recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2)
-        return 0;
+    //Recebimento dos dados após saber o length dos dados
+    if(recv(s, &recvBlock.dados, recvBlock.length, 0) < 0) {
+        return 0;    
+    }
 
-    uint16_t chksum = recvBlock.chksum;
+    if(recvBlock.sync1 != 0xDCC023C2 || recvBlock.sync2 != 0xDCC023C2) {
+        return 0;
+    }
+
+    /*uint16_t chksum = recvBlock.chksum;
     recvBlock.chksum = 0;
-    if(chksum != checksum1((char const*) &recvBlock, recvBlock.length + 14))
-        return 0;
+    if(chksum != checksum1((char const*) &recvBlock, recvBlock.length + 15)) {
+        //return 0;
+    }*/
 
-    if(recvBlock.flags | ACK | END)
+    if(recvBlock.flags == ACK || recvBlock.flags == END) {
         return recvBlock.flags;
+    }
 
     return 1;
 }
@@ -177,9 +180,9 @@ void sendACK() {
     blockACK.flags = ACK;
     //blockACK.dados[];
 
-    blockACK.chksum = checksum1((char const*) &blockACK, blockACK.length + 14);
+    /*blockACK.chksum = checksum1((char const*) &blockACK, blockACK.length + 15);*/
 
-    if(send(s, &blockACK, blockACK.length + 14, 0) < 0){
+    if(send(s, &blockACK, blockACK.length + 15, 0) < 0){
         perror("error: send");
         close(s);
         exit(1);
@@ -187,120 +190,57 @@ void sendACK() {
 }
 
 int main(int argc, char const *argv[]) {
-    debbug_log = fopen(argv[5], "w");
     if(!openSocket(argv[1], argv[2]))
         exit(1);
 
     if(!arq_open(argv[3], argv[4]))
         exit(1);
 
-    char sending = 1, readToSend = 0;
+    char sending = 1, blockNotRead = 1;
     char receiving = 1;
-    char count;
     uint16_t lastIdReceived = -1;
     uint32_t lastCheckSum = 0x40000000;
     size_t length;
-    while(sending) {
-        /*Block Not Read*/
-        printf("/*Block Not Read*/\n");
-        if(!readToSend)
-            length = readBlock();
-        readToSend = 1;
-
-        /*Read To Send*/
-        printf("/*Read To Send*/\n");
-        if(send(s, &sendBlock, length, 0) < 0){
-            perror("error: send");
-            close(s);
-            exit(1);
-        }
-        if(sendBlock.flags & END) {
-            /* Wait ACK */
-            printf("/* Wait ACK */\n");
-            for(count = 0; !(receive() & ACK); count++) { 
-                if(MAX_COUNT > count) {
-                    fprintf(stderr, "receive(): Tentativas excedidas: %dx\n", MAX_COUNT);
-                    exit(1);
-                }
-                if(send(s, &sendBlock, length, 0) < 0){
-                    perror("error: send");
-                    close(s);
-                    exit(1);
-                }
+    while(sending || receiving) {
+        if(sending) {
+            if(blockNotRead) {
+                /*Block Not Read*/
+                length = readBlock();
+                blockNotRead = 0;
             }
-            sending = 0;
-        } else {
-            /* Wait ACK | Block | END */
-            uint8_t r = receive();
-            if(r == 1) {
-                /* Block Received */
-                sendACK();
 
-                /* Read To Write */
-                if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
-                    writeBlock();
-                    lastIdReceived = recvBlock.id;
-                    lastCheckSum = recvBlock.chksum;
-                }
-            } else if(r & ACK) {
-                /* Block Not Read */
-                readToSend = 0;
-            } else if(r & END) {
-                /* END Received */
-                sendACK();
-                if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
-                    writeBlock();
-                    lastIdReceived = recvBlock.id;
-                    lastCheckSum = recvBlock.chksum;
-                }
-                receiving = 0;
-            } else if(r == 0) {
-                /* Read To Send */
-            } else {
-                fprintf(stderr, "receive(): Retorno inválido %d\n", r);
+            /*Read To Send*/
+            if(send(s, &sendBlock, length, 0) < 0){
+                perror("error: send");
+                close(s);
                 exit(1);
             }
         }
-    }
-    /* Not To Send */
-    //Configurando timeout
-    struct timeval time_str;
-    time_str.tv_sec = TIMEOUT_SECMAX;
-    time_str.tv_usec = TIMEOUT_uSECMAX;
-    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &time_str, sizeof(time_str));
-    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &time_str, sizeof(time_str));
 
-    while(receiving) {
-        /* Wait Block | END */
+        /* Wait ACK | Block | END */
         uint8_t r = receive();
-        if(r == 1) {
+        if(r == 1 || r == END) {
             /* Block Received */
             sendACK();
+            if(r == END)
+                receiving = 0;
 
             /* Read To Write */
-            if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
+            if(lastIdReceived != recvBlock.id || lastCheckSum != recvBlock.chksum) {
                 writeBlock();
                 lastIdReceived = recvBlock.id;
                 lastCheckSum = recvBlock.chksum;
             }
-        } else if(r & END) {
-            /* END Received */
-            sendACK();
-            if(lastIdReceived != recvBlock.id && lastCheckSum != recvBlock.chksum) {
-                writeBlock();
-                lastIdReceived = recvBlock.id;
-                lastCheckSum = recvBlock.chksum;
+        } else if(r == ACK) {
+            if(sendBlock.flags == END) {
+                sending = 0;
+            } else {
+                /* Block Not Read */
+                blockNotRead = 1;
             }
-            receiving = 0;
-        } else if(r == 0) {
-            /* Wait Block | END */
-        } else {
-            fprintf(stderr, "receive(): Retorno inválido %d\n", r);
-            exit(1);
         }
     }
 
     arq_close();
-    fclose(debbug_log);
     exit(0);
 }

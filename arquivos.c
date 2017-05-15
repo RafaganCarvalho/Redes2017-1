@@ -26,6 +26,10 @@ size_t arq_read(char* buf) {
     return aux;
 }
 
+int arq_read_end() {
+    return feof(in);
+}
+
 int arq_write(char const* buf, int length) {
     if(fwrite(buf, sizeof(char), length, out) == length)
         return 1;

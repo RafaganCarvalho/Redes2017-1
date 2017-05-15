@@ -143,14 +143,16 @@ void writeBlock() {
  * Retorna 0 em caso de erro ou timeout.
  */
 uint8_t receive() {
+    //Recebimento do cabeçalho
     if(recv(s, &recvBlock, 15, 0) < 0) {
         if(errno == EAGAIN || errno == EWOULDBLOCK)
             return 2;
         return 0;
     }
-
     recvBlock.length = ntohs(recvBlock.length);
     recvBlock.id = ntohs(recvBlock.id);
+
+    //Recebimento dos dados após saber o length dos dados
     if(recv(s, &recvBlock.dados, recvBlock.length, 0) < 0) {
         if(errno == EAGAIN || errno == EWOULDBLOCK)
             return 2;
@@ -169,7 +171,7 @@ uint8_t receive() {
         //return 0;
     }*/
 
-    printf("recvBlock.flags(%2x), ACK(%2x), END(%2x): %d\n", recvBlock.flags, ACK, END, recvBlock.flags == ACK || recvBlock.flags == END);
+    /*printf("recvBlock.flags(%2x), ACK(%2x), END(%2x): %d\n", recvBlock.flags, ACK, END, recvBlock.flags == ACK || recvBlock.flags == END);*/
     if(recvBlock.flags == ACK || recvBlock.flags == END) {
         return recvBlock.flags;
     }
